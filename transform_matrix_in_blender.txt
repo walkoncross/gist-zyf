@@ -1,0 +1,168 @@
+# Different transform matrices in blender
+
+Object matrix_basis/matrix_local/matrix_world/matrix_parent_inverse; Bone matrix/matrix_local; PoseBone matrix/matrix_local/matrix_channel;
+
+## 1. Object matrix
+
+      """
+    Refer to:
+    https://docs.blender.org/api/current/bpy.types.Object.html?highlight=object#bpy.types.Object
+    """
+
+matrix_basis
+ (从object space 到 world space的变换矩阵，计算的是未关联parent时的坐标，关联parent后一直报错关联前的值不变）
+Matrix access to location, rotation and scale (including deltas), before constraints and parenting are applied
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
+
+matrix_local  （=matrix_parent_inverse*matrix_basis）
+(从object space 到 parent object space的变换矩阵，未关联parent时一直等于matrix_basis（相当于parent就是world space 的原点）
+Parent relative transformation matrix. Warning: Only takes into account object parenting, so e.g. in case of bone parenting you get a matrix relative to the Armature object, not to the actual parent bone
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
+
+matrix_parent_inverse 
+（关联parent时parent.matrix_world的逆矩阵，不是parent.matrix_world的逆矩阵，因为parent可能还有自己的parent，
+为了方便在matrix_basis发生变化时在线更新matrix_local=matrix_parent_inverse*matrix_basis）
+Inverse of object’s parent matrix at time of parenting
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+
+matrix_world  （=parent.matrix_world * matrix_local）
+
+(从object space 到 world space的变换矩阵，未关联parent时一直等于matrix_basis（相当于parent就是world space 的原点）
+Worldspace transformation matrix
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+
+https://blender.stackexchange.com/questions/131135/matrix-basis-vs-matrix-local-for-object-parented-to-bone
+
+* matrix_basis is simply a way to access the pose-bone or objects (location,scale,rotation) properties. This is just for convenience - so you don't have to consider if euler/quaternion/axis-angle rotation are used when getting/setting a transformation. 
+* matrix_local is the the objects world-space 4x4 matrix, relative to it's parent, if it has a parent - if the parent is a bone or a vertex, it will be relative to the parent matrix defined by the vertex/bone parent relationship. 
+
+https://blender.stackexchange.com/questions/35125/what-is-matrix-basis
+
+Object.matrix_local = Object.matrix_parent_inverse * Object.matrix_basis 
+Object.matrix_world = Object.parent.matrix_world * Object.matrix_local
+
+如果没有父节点： Object.matrix_parent_inverse = Identity_4x4
+Object.matrix_local =Object. matrix_basis = Object.matrix_world
+
+对于object上的一个顶点（其在objcet space的坐标为: pos_objspace)，其在local space （即parent space）的坐标（如果没有parent，那local space就是world space)：
+
+pos_localspace = Object.matrix_local * pos_objspace = Object.matrix_parent_inverse * Object.matrix_basis * pos_objspace 
+
+Object.matrix_basis * pos_objspace: 得到的是在绕object自身的轴旋转之后的世界坐标，因为matrix_basis最后一列包含了object当前的世界坐标；
+Object.matrix_parent_inverse * Object.matrix_basis * pos_objspace： 将旋转之后的世界坐标映射到local space (parent space)，parent object自身的局部坐标系
+
+pos_worldspace = Object.matrix_world * pos_objspace = Object.parent.matrix_world * Object.matrix_local * pos_objspace
+Object.matrix_local * pos_objspace： 这一步将object space 旋转平移变换之后的坐标变换到local space (parent space)
+Object.parent.matrix_world * Object.matrix_local * pos_objspace: 这一步将local space  (parent space)旋转平移变换之后的坐标变换到world space
+
+
+https://blender.stackexchange.com/questions/180527/how-to-calculate-a-parent-inverse-matrix
+Object.matrix_parent_inverse = Object.parent.matrix_local.inverted (wrong, 经过代码验证，这里在2.8里是不成立的)
+
+Object.matrix_parent_inverse = Object.parent.matrix_world.inverted (right, 经过代码验证，这里在2.8里是成立的)
+
+
+## 2. Bone matrix (Rest Bone)
+rest_bones: armature_object.data.bones (bpy.types.Bone)
+ 	refer to: 
+    https://docs.blender.org/api/current/bpy.types.Armature.html?highlight=armature#bpy.types.Armature.bones
+    https://docs.blender.org/api/current/bpy.types.ArmatureBones.html#bpy.types.ArmatureBones
+    https://docs.blender.org/api/current/bpy.types.Bone.html#bpy.types.Bone
+
+matrix
+（bone space 跟parent bone space之间的变换矩阵）
+3x3 bone matrix
+Type
+float multi-dimensional array of 3 * 3 items in [-inf, inf], default ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), (readonly)
+
+matrix_local
+（从bone space到armature object space的变换矩阵）
+4x4 bone matrix relative to armature
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0)), (readonly)
+
+
+## 3. PoseBone matrix
+pose_bones: armature_object.pose.bones (bpy.types.PoseBone)
+        refer to: 
+        https://docs.blender.org/api/current/bpy.types.Object.html?highlight=types%20object#bpy.types.Object.pose
+        https://docs.blender.org/api/current/bpy.types.Pose.html?highlight=pose#bpy.types.Pose
+        https://docs.blender.org/api/current/bpy.types.PoseBone.html?highlight=posebone#bpy.types.PoseBone
+
+bone
+Bone associated with this PoseBone
+Type
+Bone, (readonly, never None)
+
+matrix （PoseBone.matrix = PoseBone.parent.matrix * PoseBone.parent.bone.matrix_local.inverted() * PoseBone.bone.matrix_local * PoseBone.matrix_basis）
+（从bone space到armature object space的变换矩阵）
+Final 4x4 matrix after constraints and drivers are applied (object space = armature space)
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
+
+matrix_basis
+（在bone space发生旋转/位移的变换矩阵，相对于rest bone）
+Alternative access to location/scale/rotation relative to the parent and own rest bone
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0))
+
+matrix_channel （PoseBone.matrix_channel = PoseBone.matrix * PoseBone.bone.matrix_local.inverted()）
+（为了方便计算 armature空间任意一点受该骨骼旋转之后的坐标在armature空间）
+4x4 matrix, before constraints
+Type
+float multi-dimensional array of 4 * 4 items in [-inf, inf], default ((0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0)), (readonly)
+
+经过代码验证，这里在2.8里是成立的:
+PoseBone.matrix_channel = PoseBone.matrix * PoseBone.bone.matrix_local.inverted()
+PoseBone.matrix = PoseBone.matrix_channel * PoseBone.bone.matrix_local
+
+PoseBone.matrix = PoseBone.parent.matrix * PoseBone.parent.bone.matrix_local.inverted() * PoseBone.bone.matrix_local * PoseBone.matrix_basis
+
+*_armature: vector in armature space
+*_bone: vector in bone space
+
+V_armature_after_rot = PoseBone.matrix * V_bone
+			   = PoseBone.matrix_channel * (PoseBone.bone.matrix_local *  V_bone)
+		           = PoseBone.matrix_channel *  V_armature 
+
+上式可以方便计算 armature空间任意一点受该骨骼旋转之后的坐标在armature空间，
+
+比如用骨骼驱动mesh，先把mesh上的点映射到armature空间，再将新的坐标左乘以该矩阵，得到该点在armature空间新的位置，再左乘armature 的matrix_world即得到变换之后的全局坐标，
+整个过程如下：
+
+V_world_after_rot = ArmatureObject.matrix_world * ( ArmatureObject.pose_bones[ii] * ArmatureObject.matrix_world.inverted() * MeshObject.vertex.matarix_world *  MeshObject.vertex[jj].loc)
+V_mesh_after_rot = MeshObject.vertex.matarix_world.inverted() * V_world_after_rot
+ = MeshObject.vertex.matarix_world.inverted() * ArmatureObject.matrix_world * ( ArmatureObject.pose_bones[ii] * ArmatureObject.matrix_world.inverted() * MeshObject.vertex.matarix_world *  MeshObject.vertex[jj].loc)
+
+定义M_mesh2arm = ArmatureObject.matrix_world.inverted() * MeshObject.vertex.matarix_world, 该矩阵将mesh空间的点映射到armature空间
+M_arm2mesh= M_mesh2arm.inverted() = MeshObject.vertex.matarix_world.inverted() * ArmatureObject.matrix_world , 该矩阵将armature空间的点映射到mesh空间
+
+则上述公式可以写作：
+V_mesh_after_rot = M_mesh2arm.inverted() * ( ArmatureObject.pose_bones[ii] * M_mesh2arm *  MeshObject.vertex[jj].loc)
+
+https://stackoverflow.com/questions/1273588/exporting-keyframes-in-blender-python
+
+The channel data should be applied on top of the bind pose matrix.
+The complete formula is the following:
+Mr = Ms * B0*P0 * B1*P1 ... Bn*Pn
+where:
+Mr = result matrix for a bone 'n'
+Ms = skeleton->world matrix
+Bi = bind pose matrix for bone 'i'
+Pi = pose actual matrix constructed from stored channels (that you are exporting)
+'n-1' is a parent bone for 'n', 'n-2' is parent of 'n-1', ... , '0' is a parent of '1'
+
+## 4. EditBone Matrix
+edit_bones: armature_object.data.edit_bones (bpy.types.EditBone)
+
+    """ 
+    refer to: 
+        https://docs.blender.org/api/current/bpy.types.Armature.html?highlight=armature#bpy.types.Armature.edit_bones
+        https://docs.blender.org/api/current/bpy.types.ArmatureEditBones.html#bpy.types.ArmatureEditBones
+        https://docs.blender.org/api/current/bpy.types.EditBone.html?highlight=edit_bones
+
+    """
